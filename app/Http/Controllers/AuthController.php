@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -15,35 +15,41 @@ class AuthController extends Controller
     }
     public function login(Request $request)
     {
-        return response()->json('login');
+        $data = $request->validate([
+            "git_email" => "required|email",
+            "password" => "required|min:6"
+        ]);
+        $git_users = User::where("git_email", $data["git_email"])->first();
+        if (!$git_users || !Hash::check($data["password"], $git_users->password)) {
+            throw ValidationException::withMessages([
+                'message' => ['The provided credentials are incorrect.'],
+            ], 401);
+        } else {
+            $token = $git_users->createToken("github_user_api")->plainTextToken;
+            $response = [
+                "user" => $git_users,
+                "token" => $token
+            ];
+            return response($response, 200);
+        }
     }
     public function register(Request $request)
     {
-        $validate = Validator::make(request()->all(), [
-            'git_username' => 'required',
-            'git_email' => 'required|email|unique:users',
-            'password' => 'required|min:6'
+        $data = $request->validate([
+            "git_username" => "required",
+            "git_email" => "required|email|unique:users",
+            "password" => "required|min:6"
         ]);
-        if ($validate->fails()) {
-            return response()->json([
-                'message' => 'registration_validation_error',
-                'errors' => $validate->errors()
-            ], 422);
-        }
-        $git_users = new User();
-        $git_users->git_username = $request["git_username"];
-        $git_users->git_email = $request["git_email"];
-        $git_users->password = Hash::make($request["password"]);
-        if ($git_users->save()) {
-            return response()->json([
-                'message' => 'registration_validation_success',
-                'users' => $git_users->toArray()
-            ], 200);
-        } else {
-            return response()->json([
-                'message' => 'registration_validation_failed',
-                'error' => $git_users->errors()
-            ], 500);
-        }
+        $git_users = User::create([
+            "git_username" => $data["git_username"],
+            "git_email" => $data["git_email"],
+            "password" => Hash::make($data["password"])
+        ]);
+        $token = $git_users->createToken("github_user_api")->plainTextToken;
+        $response = [
+            'users' => $git_users,
+            'token' => $token
+        ];
+        return response($response, 201);
     }
 }
